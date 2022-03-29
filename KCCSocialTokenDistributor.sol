@@ -23,22 +23,15 @@ contract KCCSocialTokenDistributor is Ownable {
     mapping(address => mapping(address => uint256)) _claimedTokens;
     mapping(address => mapping(address => uint256)) _unclaimedTokens;
 
-    address[] _permittedTokens;
+    address[] _supportedTokens;
+    mapping(address => bool) _isTokenSupported;
     mapping(address => bool) _permittedStores;
 
     constructor() {
+        _supportedTokens.push(address(0));
     }
 
     // Contract Control
-
-    function AddPermittedToken(address token) external onlyOwner
-    {
-        for(uint256 i = 0; i < _permittedTokens.length; i++) {
-            require(_permittedTokens[i] != token, "Token already added!");
-        }
-
-        _permittedTokens.push(token);
-    }
 
     function ChangePermittedStore(address token, bool allowed) external onlyOwner
     {
@@ -84,6 +77,11 @@ contract KCCSocialTokenDistributor is Ownable {
     function AddExternalTokenPayment(uint256 accessoryID, address token, uint256 amount) public
     {
         require(_permittedStores[_msgSender()], "You are not allowed to do this.");
+
+        if(!_isTokenSupported[token]) {
+            _supportedTokens.push(token);
+            _isTokenSupported[token] = true;
+        }
 
         PartnerShare storage parnterShare = _partnerShares[accessoryID];
         if(parnterShare.exists) {
@@ -135,8 +133,8 @@ contract KCCSocialTokenDistributor is Ownable {
 
     function UpdateTotalUnclaimedTokens() internal
     {
-        for(uint256 i = 0; i < _permittedTokens.length; i++) {
-            address token = _permittedTokens[i];
+        for(uint256 i = 0; i < _supportedTokens.length; i++) {
+            address token = _supportedTokens[i];
 
             for(uint256 j = 0; j < _globalShareOwners.length; j++) {
                 address user = _globalShareOwners[j];
@@ -170,10 +168,8 @@ contract KCCSocialTokenDistributor is Ownable {
 
     function WithdrawShares() external
     {
-        WithdrawToken(address(0), _msgSender());
-
-        for(uint256 i = 0; i < _permittedTokens.length; i++) {
-            WithdrawToken(_permittedTokens[i], _msgSender());
+        for(uint256 i = 0; i < _supportedTokens.length; i++) {
+            WithdrawToken(_supportedTokens[i], _msgSender());
         }
     }
 }
