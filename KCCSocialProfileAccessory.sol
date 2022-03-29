@@ -84,7 +84,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
         for(uint256 i = 0; i < accessoryID.length; i++) {
             require(hash_[i].toEthSignedMessageHash().recover(signature[i]) == _signer, "Invalid Signature");
-            require(hash_[i] == keccak256(abi.encodePacked(_msgSender(), salt[i], accessoryID[i], timestamp, paymentToken)), "Invalid Hash");
+            require(hash_[i] == keccak256(abi.encodePacked(_msgSender(), salt[i], accessoryID[i], timestamp, paymentToken, totalPayment)), "Invalid Hash");
 
             _mintToTarget(accessoryID[i], _msgSender(), 1);
         }
@@ -106,7 +106,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         require(block.timestamp < timestamp, "This sale signature has expired");
 
         require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
-        require(hash_ == keccak256(abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken)), "Invalid Hash");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, amountPaying)), "Invalid Hash");
 
         _mintToTarget(accessoryID, _msgSender(), 1);
     }
