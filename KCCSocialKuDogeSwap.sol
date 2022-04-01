@@ -62,14 +62,9 @@ contract KCCSocialKuDogeSwap is Ownable {
         path[1] = address(_KuDoge);
 
         //This contract is feeless, so swapped tokens should be received by this and then forwarded
-        uint256 preSwapKuDogeBalance = _KuDoge.balanceOf(address(this));
-
         amounts = _router.swapExactETHForTokens{value:msg.value}(amountOutMin, path, address(this), block.timestamp);
 
-        uint256 afterSwapKuDogeBalance = _KuDoge.balanceOf(address(this));
-        uint256 swappedKuDoge = afterSwapKuDogeBalance - preSwapKuDogeBalance;
-
-        _KuDoge.transfer(msg.sender, swappedKuDoge);
+        _KuDoge.transfer(msg.sender, amounts[1]);
     }
 
     function getAmountsOut(uint amountIn) external view returns (uint[] memory amounts)
