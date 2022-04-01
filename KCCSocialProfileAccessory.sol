@@ -26,9 +26,15 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         mapping(address => uint256) ownerIndex;
     }
 
+    struct UserNFTOwnership {
+        uint256[] ownedNFTIDs;
+    }
+
     KCCSocialTokenDistributor public _tokenDistributor;
 
-    mapping(uint256 => OwnershipDetails) _accessoryForID;
+    mapping(uint256 => OwnershipDetails) public _ownershipDetailsForNFTID;
+    mapping(address => UserNFTOwnership) private _userOwnedNFTs;
+    mapping(address => mapping(uint256 => uint256)) private _userNFTOwnershipMapping;
 
     address private _signer = 0x4a6B3a5f12D71bbf7C1f7ce7A6231Db8A2656226;
 
@@ -41,7 +47,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     function AddOrModifyAccessoryDetails(uint256 id, uint32 maxSupply) external onlyOwner
     {
-        OwnershipDetails storage ownershipDetails = _accessoryForID[id];
+        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[id];
 
         require(maxSupply >= ownershipDetails.currentSupply, "Currrent Supply exceeds max supply!");
 
@@ -51,6 +57,38 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
     function SetTokenDistributor(address distributorAddress) external onlyOwner
     {
         _tokenDistributor = KCCSocialTokenDistributor(distributorAddress);
+    }
+
+    function SetSignerWallet(address signer) external onlyOwner
+    {
+        _signer = signer;
+    }
+
+    // Transfer
+
+    function safeTransferFrom(address from,address to,uint256 id,uint256 amount,bytes calldata data) public override
+    {
+        bool previousOwnershipOfTo = balanceOf(to,id) > 0;
+
+        super.safeTransferFrom(from, to, id, amount, data);
+
+        _fixOwnershipData(from, to, id, previousOwnershipOfTo);
+    }
+
+    function safeBatchTransferFrom(address from, address to, uint256[] memory ids,uint256[] memory amounts,bytes memory data) public override
+    {
+        bool [] memory previousOwnershipOfTo = new bool[](ids.length);
+        for(uint256 i = 0; i < ids.length; i++)
+        {
+            previousOwnershipOfTo[i] = balanceOf(to,ids[i]) > 0;
+        }
+
+        super.safeBatchTransferFrom(from, to, ids, amounts, data);
+
+        for(uint256 i = 0; i < ids.length; i++)
+        {
+            _fixOwnershipData(from, to, ids[i], previousOwnershipOfTo[i]);
+        }
     }
 
     // Purchase
@@ -126,14 +164,14 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     function AccessoryOwnerCount(uint32 accessoryID) public view returns (uint256)
     {
-        OwnershipDetails storage ownershipDetails = _accessoryForID[accessoryID];
+        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
         return ownershipDetails.accessoryOwners.length;
     }
 
     function GetBatchAccessoryOwners(uint32 accessoryID, uint256 start, uint256 end) public view returns (address[] memory accessoryOwners)
     {
-        OwnershipDetails storage ownershipDetails = _accessoryForID[accessoryID];
+        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
         address [] memory owners = new address[](end - start + 1);
 
@@ -147,11 +185,36 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         return owners;
     }
 
+    function OwnerUniqueTokenAmount(address owner) public view returns (uint256) {
+        return _userOwnedNFTs[owner].ownedNFTIDs.length;
+    }
+
+    function OwnerUniqueTokenIDs(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs) {
+        return _userOwnedNFTs[owner].ownedNFTIDs;
+    }
+
+    function OwnerTokenBalanceByIndex(address owner, uint256 index) external view returns (uint256) {
+        require(index < OwnerUniqueTokenAmount(owner), "Enumerable: token index out of bounds for owner");
+        return _userOwnedNFTs[owner].ownedNFTIDs[index];
+    }
+
+    function OwnerTokenIDsAndBalances(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs, uint256[] memory tokenBalances) {
+        ownedUniqueTokenIDs = _userOwnedNFTs[owner].ownedNFTIDs;
+        tokenBalances = new uint256[](ownedUniqueTokenIDs.length);
+
+        for (uint256 index = 0; index < tokenBalances.length; index++) {
+            tokenBalances[index] = balanceOf(owner, ownedUniqueTokenIDs[index]);
+        }
+
+        return (ownedUniqueTokenIDs, tokenBalances);
+
+    }
+
     // Internal Utility
 
     function _mintToTarget(uint32 accessoryID, address targetUser, uint32 amount) internal
     {
-        OwnershipDetails storage ownershipDetails = _accessoryForID[accessoryID];
+        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
         if(ownershipDetails.maxSupply > 0) require(ownershipDetails.currentSupply + amount <= ownershipDetails.maxSupply, "Purchase exceeds maximum supply!");
 
@@ -164,12 +227,21 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         if(!previousOwnershipOfTo) {
             ownershipDetails.ownerIndex[targetUser] = ownershipDetails.accessoryOwners.length;
             ownershipDetails.accessoryOwners.push(targetUser);
+
+            _userNFTOwnershipMapping[targetUser][accessoryID] = _userOwnedNFTs[targetUser].ownedNFTIDs.length;
+            _userOwnedNFTs[targetUser].ownedNFTIDs.push(accessoryID);
         }
     }
 
     function _fixOwnershipData(address from, address to, uint256 id, bool previousOwnershipOfTo) internal
     {
-        OwnershipDetails storage ownershipDetails = _accessoryForID[id];
+        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[id];
+
+        if(!previousOwnershipOfTo) {
+            //If the receiver didn't previously have this NFT, add it to it's list of unique NFT IDs owned
+            _userNFTOwnershipMapping[to][id] = _userOwnedNFTs[to].ownedNFTIDs.length;
+            _userOwnedNFTs[to].ownedNFTIDs.push(id);
+        }
 
         if(balanceOf(from,id) == 0)    {
             if(!previousOwnershipOfTo) {
@@ -182,6 +254,10 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
                 ownershipDetails.accessoryOwners[ownershipDetails.ownerIndex[from]] = ownershipDetails.accessoryOwners[ownershipDetails.accessoryOwners.length - 1];
                 ownershipDetails.accessoryOwners.pop();
             }
+
+            //If the sender doesn't own any amount of this NFT anymore, remove it from the sender's list of unique NFT IDs owned
+            _userOwnedNFTs[from].ownedNFTIDs[_userNFTOwnershipMapping[from][id]] = _userOwnedNFTs[from].ownedNFTIDs[_userOwnedNFTs[from].ownedNFTIDs.length-1];
+            _userOwnedNFTs[from].ownedNFTIDs.pop();
         }
         else if(!previousOwnershipOfTo) {
             //just new owner, so add to owner array
