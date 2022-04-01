@@ -34,10 +34,13 @@ contract KCCSocialTokenDistributor is Ownable {
     address[] _supportedTokens;
     mapping(address => bool) _isTokenSupported;
 
+    mapping(address => mapping(address => uint256)) public _totalEarnings;
+
     IERC1155 public _KCCSocialNFT;
 
     constructor() {
         _supportedTokens.push(address(0));
+        _isTokenSupported[address(0)] = true;
     }
 
     // Contract Control
@@ -154,7 +157,7 @@ contract KCCSocialTokenDistributor is Ownable {
         uint256 globalShare = GetGlobalShareForUser(user);
 
         uint256 unclaimedTokens = _unclaimedTokens[user][token];
-        unclaimedTokens += CalculateShare(_internalUnclaimedTokens[token] - _claimedTokens[user][token], globalShare);
+        unclaimedTokens += CalculateShare(_internalUnclaimedTokens[token], globalShare) - _claimedTokens[user][token];
 
         return unclaimedTokens;
     }
@@ -236,6 +239,8 @@ contract KCCSocialTokenDistributor is Ownable {
         _unclaimedTokens[user][token] = 0;
         _claimedTokens[user][token] += unclaimed;
         _partnerUnclaimedTokens[user][token] = 0;
+
+        _totalEarnings[user][token] += totalWithdraw;
 
         if(totalWithdraw > 0) {
             if(token == address(0)) {
