@@ -128,18 +128,6 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         }
     }
 
-    function encodingResult(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, uint256 timestamp, uint256 salt) external view returns (bytes memory S, bytes32 T)
-    {
-        uint256 totalPayment = 0;
-
-        for(uint256 i = 0; i < amountPaying.length; i++) {
-            totalPayment += amountPaying[i];
-        }
-
-        S = abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, totalPayment);
-        T = keccak256(S);
-    }
-
     function PurchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
     {
         if(paymentToken == address(0)) {
