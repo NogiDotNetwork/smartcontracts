@@ -93,9 +93,9 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Purchase
 
-    function PurchaseAccessoryMulti(uint32[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32[] calldata hash_, bytes[] memory signature, uint256 timestamp, uint256[] calldata salt) external payable
+    function PurchaseAccessoryMulti(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
     {
-        require(accessoryID.length == amountPaying.length && amountPaying.length == hash_.length && hash_.length == signature.length && signature.length == salt.length, "Uneven arrays!");
+        require(accessoryID.length == amountPaying.length, "Uneven arrays!");
 
         uint256 totalPayment = 0;
 
@@ -120,15 +120,27 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
         require(block.timestamp < timestamp, "This sale signature has expired");
 
-        for(uint256 i = 0; i < accessoryID.length; i++) {
-            require(hash_[i].toEthSignedMessageHash().recover(signature[i]) == _signer, "Invalid Signature");
-            require(hash_[i] == keccak256(abi.encodePacked(_msgSender(), salt[i], accessoryID[i], timestamp, paymentToken, totalPayment)), "Invalid Hash");
+        require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, totalPayment)), "Invalid Hash");
 
+        for(uint256 i = 0; i < accessoryID.length; i++) {
             _mintToTarget(accessoryID[i], _msgSender(), 1);
         }
     }
 
-    function PurchaseAccessory(uint32 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
+    function encodingResult(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, uint256 timestamp, uint256 salt) external view returns (bytes memory S, bytes32 T)
+    {
+        uint256 totalPayment = 0;
+
+        for(uint256 i = 0; i < amountPaying.length; i++) {
+            totalPayment += amountPaying[i];
+        }
+
+        S = abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, totalPayment);
+        T = keccak256(S);
+    }
+
+    function PurchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
     {
         if(paymentToken == address(0)) {
             require(msg.value >= amountPaying, "Purchase amount must suit the accessory price");
@@ -155,6 +167,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
     {
         Address.sendValue(payable(owner()), address(this).balance);
     }
+
     function WithdrawAnyToken(address token) external onlyOwner
     {
         IERC20(token).transfer(owner(), IERC20(token).balanceOf(address(this)));
@@ -212,7 +225,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Internal Utility
 
-    function _mintToTarget(uint32 accessoryID, address targetUser, uint32 amount) internal
+    function _mintToTarget(uint256 accessoryID, address targetUser, uint32 amount) internal
     {
         OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
