@@ -33,6 +33,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
     KCCSocialTokenDistributor public _tokenDistributor;
 
     mapping(uint256 => OwnershipDetails) public _ownershipDetailsForNFTID;
+    mapping(address => uint256) public _walletPurchaseCounter;
     mapping(address => UserNFTOwnership) private _userOwnedNFTs;
     mapping(address => mapping(uint256 => uint256)) private _userNFTOwnershipMapping;
 
@@ -45,7 +46,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Contract Control
 
-    function AddOrModifyAccessoryDetails(uint256 id, uint32 maxSupply) external onlyOwner
+    function addOrModifyAccessoryDetails(uint256 id, uint32 maxSupply) external onlyOwner
     {
         OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[id];
 
@@ -54,12 +55,12 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         ownershipDetails.maxSupply = maxSupply;
     }
 
-    function SetTokenDistributor(address distributorAddress) external onlyOwner
+    function setTokenDistributor(address distributorAddress) external onlyOwner
     {
         _tokenDistributor = KCCSocialTokenDistributor(distributorAddress);
     }
 
-    function SetSignerWallet(address signer) external onlyOwner
+    function setSignerWallet(address signer) external onlyOwner
     {
         _signer = signer;
     }
@@ -93,7 +94,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Purchase
 
-    function PurchaseAccessoryMulti(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
+    function purchaseAccessoryMulti(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter) external payable
     {
         require(accessoryID.length == amountPaying.length, "Uneven arrays!");
 
@@ -121,14 +122,18 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         require(block.timestamp < timestamp, "This sale signature has expired");
 
         require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
-        require(hash_ == keccak256(abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, totalPayment)), "Invalid Hash");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, totalPayment)), "Invalid Hash");
+
+        require(_walletPurchaseCounter[_msgSender()] == purchaseCounter, "This hash became invalid due to another transaction by you");
+
+        _walletPurchaseCounter[_msgSender()] = _walletPurchaseCounter[_msgSender()] + 1;
 
         for(uint256 i = 0; i < accessoryID.length; i++) {
             _mintToTarget(accessoryID[i], _msgSender(), 1);
         }
     }
 
-    function PurchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 salt) external payable
+    function purchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter) external payable
     {
         if(paymentToken == address(0)) {
             require(msg.value >= amountPaying, "Purchase amount must suit the accessory price");
@@ -144,33 +149,37 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         require(block.timestamp < timestamp, "This sale signature has expired");
 
         require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
-        require(hash_ == keccak256(abi.encodePacked(_msgSender(), salt, accessoryID, timestamp, paymentToken, amountPaying)), "Invalid Hash");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, amountPaying)), "Invalid Hash");
+
+        require(_walletPurchaseCounter[_msgSender()] == purchaseCounter, "This hash became invalid due to another transaction by you");
+
+        _walletPurchaseCounter[_msgSender()] = _walletPurchaseCounter[_msgSender()] + 1;
 
         _mintToTarget(accessoryID, _msgSender(), 1);
     }
 
     // Safety Fallbacks in case someone sends crypto to this contract
 
-    function WithdrawKCS() external onlyOwner
+    function withdrawKCS() external onlyOwner
     {
         Address.sendValue(payable(owner()), address(this).balance);
     }
 
-    function WithdrawAnyToken(address token) external onlyOwner
+    function withdrawAnyToken(address token) external onlyOwner
     {
         IERC20(token).transfer(owner(), IERC20(token).balanceOf(address(this)));
     }
 
     // External Info
 
-    function AccessoryOwnerCount(uint32 accessoryID) public view returns (uint256)
+    function accessoryOwnerCount(uint32 accessoryID) public view returns (uint256)
     {
         OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
         return ownershipDetails.accessoryOwners.length;
     }
 
-    function GetBatchAccessoryOwners(uint32 accessoryID, uint256 start, uint256 end) public view returns (address[] memory accessoryOwners)
+    function getBatchAccessoryOwners(uint32 accessoryID, uint256 start, uint256 end) public view returns (address[] memory accessoryOwners)
     {
         OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
@@ -186,20 +195,20 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         return owners;
     }
 
-    function OwnerUniqueTokenAmount(address owner) public view returns (uint256) {
+    function ownerUniqueTokenAmount(address owner) public view returns (uint256) {
         return _userOwnedNFTs[owner].ownedNFTIDs.length;
     }
 
-    function OwnerUniqueTokenIDs(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs) {
+    function ownerUniqueTokenIDs(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs) {
         return _userOwnedNFTs[owner].ownedNFTIDs;
     }
 
-    function OwnerTokenBalanceByIndex(address owner, uint256 index) external view returns (uint256) {
-        require(index < OwnerUniqueTokenAmount(owner), "Enumerable: token index out of bounds for owner");
+    function ownerTokenBalanceByIndex(address owner, uint256 index) external view returns (uint256) {
+        require(index < ownerUniqueTokenAmount(owner), "Enumerable: token index out of bounds for owner");
         return _userOwnedNFTs[owner].ownedNFTIDs[index];
     }
 
-    function OwnerTokenIDsAndBalances(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs, uint256[] memory tokenBalances) {
+    function ownerTokenIDsAndBalances(address owner) external view returns (uint256[] memory ownedUniqueTokenIDs, uint256[] memory tokenBalances) {
         ownedUniqueTokenIDs = _userOwnedNFTs[owner].ownedNFTIDs;
         tokenBalances = new uint256[](ownedUniqueTokenIDs.length);
 
