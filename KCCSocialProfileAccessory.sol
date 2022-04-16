@@ -19,8 +19,7 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
     using ECDSA for bytes32;
 
     struct OwnershipDetails {
-        uint32 maxSupply;
-        uint32 currentSupply;
+        uint256 currentSupply;
 
         address[] accessoryOwners;
         mapping(address => uint256) ownerIndex;
@@ -45,15 +44,6 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
     }
 
     // Contract Control
-
-    function addOrModifyAccessoryDetails(uint256 id, uint32 maxSupply) external onlyOwner
-    {
-        OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[id];
-
-        require(maxSupply >= ownershipDetails.currentSupply, "Currrent Supply exceeds max supply!");
-
-        ownershipDetails.maxSupply = maxSupply;
-    }
 
     function setTokenDistributor(address distributorAddress) external onlyOwner
     {
@@ -94,9 +84,9 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Purchase
 
-    function purchaseAccessoryMulti(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter) external payable
+    function purchaseAccessoryMulti(uint256[] calldata accessoryID, address paymentToken, uint256[] calldata amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter, uint256[] calldata supposedCurrentSupplies) external payable
     {
-        require(accessoryID.length == amountPaying.length, "Uneven arrays!");
+        require(accessoryID.length == amountPaying.length && supposedCurrentSupplies.length == amountPaying.length, "Uneven arrays!");
 
         uint256 totalPayment = 0;
 
@@ -122,18 +112,18 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         require(block.timestamp < timestamp, "This sale signature has expired");
 
         require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
-        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, totalPayment)), "Invalid Hash");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, totalPayment, supposedCurrentSupplies)), "Invalid Hash");
 
         require(_walletPurchaseCounter[_msgSender()] == purchaseCounter, "This hash became invalid due to another transaction by you");
 
         _walletPurchaseCounter[_msgSender()] = _walletPurchaseCounter[_msgSender()] + 1;
 
         for(uint256 i = 0; i < accessoryID.length; i++) {
-            _mintToTarget(accessoryID[i], _msgSender(), 1);
+            _mintToTarget(accessoryID[i], _msgSender(), supposedCurrentSupplies[i]);
         }
     }
 
-    function purchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter) external payable
+    function purchaseAccessory(uint256 accessoryID, address paymentToken, uint256 amountPaying, bytes32 hash_, bytes memory signature, uint256 timestamp, uint256 purchaseCounter, uint256 supposedCurrentSupply) external payable
     {
         if(paymentToken == address(0)) {
             require(msg.value >= amountPaying, "Purchase amount must suit the accessory price");
@@ -149,13 +139,13 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
         require(block.timestamp < timestamp, "This sale signature has expired");
 
         require(hash_.toEthSignedMessageHash().recover(signature) == _signer, "Invalid Signature");
-        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, amountPaying)), "Invalid Hash");
+        require(hash_ == keccak256(abi.encodePacked(_msgSender(), purchaseCounter, accessoryID, timestamp, paymentToken, amountPaying, supposedCurrentSupply)), "Invalid Hash");
 
         require(_walletPurchaseCounter[_msgSender()] == purchaseCounter, "This hash became invalid due to another transaction by you");
 
         _walletPurchaseCounter[_msgSender()] = _walletPurchaseCounter[_msgSender()] + 1;
 
-        _mintToTarget(accessoryID, _msgSender(), 1);
+        _mintToTarget(accessoryID, _msgSender(), supposedCurrentSupply);
     }
 
     // Safety Fallbacks in case someone sends crypto to this contract
@@ -222,17 +212,17 @@ contract KCCSocialProfileAccessory is ERC1155, Ownable {
 
     // Internal Utility
 
-    function _mintToTarget(uint256 accessoryID, address targetUser, uint32 amount) internal
+    function _mintToTarget(uint256 accessoryID, address targetUser, uint256 supposedCurrentSupply) internal
     {
         OwnershipDetails storage ownershipDetails = _ownershipDetailsForNFTID[accessoryID];
 
-        if(ownershipDetails.maxSupply > 0) require(ownershipDetails.currentSupply + amount <= ownershipDetails.maxSupply, "Purchase exceeds maximum supply!");
+        require(supposedCurrentSupply == ownershipDetails.currentSupply, "Another transaction happened that made yours invalid, please try again.");
 
-        ownershipDetails.currentSupply += amount;
+        ownershipDetails.currentSupply += 1;
 
         bool previousOwnershipOfTo = balanceOf(targetUser,accessoryID) > 0;
 
-        _mint(targetUser, accessoryID, amount, "");
+        _mint(targetUser, accessoryID, 1, "");
 
         if(!previousOwnershipOfTo) {
             ownershipDetails.ownerIndex[targetUser] = ownershipDetails.accessoryOwners.length;
